@@ -1,5 +1,6 @@
 import json
 import httpx
+import os
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
@@ -11,6 +12,41 @@ class EmotionService:
         """
         Analyzes the emotional tone, sentiment label, score, and intensity of a user message.
         """
+        # Try HuggingFace Inference API first if HUGGINGFACE_API_KEY is configured
+        hf_token = getattr(settings, "HUGGINGFACE_API_KEY", None) or os.getenv("HUGGINGFACE_API_KEY")
+        if hf_token and hf_token.strip():
+            api_url = "https://api-inference.huggingface.co/models/bhadresh-savani/distilbert-base-uncased-emotion"
+            headers = {"Authorization": f"Bearer {hf_token}"}
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    resp = await client.post(api_url, json={"inputs": message}, headers=headers)
+                    if resp.status_code == 200:
+                        predictions = resp.json()
+                        # Output format: [[{"label": "joy", "score": 0.95}, ...]]
+                        if predictions and isinstance(predictions, list) and len(predictions) > 0:
+                            scores_list = predictions[0] if isinstance(predictions[0], list) else predictions
+                            best = max(scores_list, key=lambda x: x["score"])
+                            hf_emotion = best["label"].lower() # joy, sadness, anger, fear, love, surprise
+                            
+                            mapping = {
+                                "joy": ("excited", "POSITIVE"),
+                                "love": ("excited", "POSITIVE"),
+                                "sadness": ("sad", "NEGATIVE"),
+                                "anger": ("frustrated", "NEGATIVE"),
+                                "fear": ("stressed", "NEGATIVE"),
+                                "surprise": ("excited", "POSITIVE")
+                            }
+                            mapped_emotion, sentiment = mapping.get(hf_emotion, ("neutral", "NEUTRAL"))
+                            return {
+                                "primary_emotion": mapped_emotion,
+                                "sentiment_label": sentiment,
+                                "sentiment_score": float(best["score"]),
+                                "intensity": float(best["score"]),
+                                "notes": f"Classified via HuggingFace model bhadresh-savani/distilbert-base-uncased-emotion: {hf_emotion}."
+                            }
+            except Exception as e:
+                print(f"HuggingFace Inference API error: {e}")
+
         if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY.strip() == "":
             # Rule-based fallback classifier
             msg_lower = message.lower()

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     QDRANT_PATH: str = "./qdrant_data"
     QDRANT_URL: str = ""
     QDRANT_API_KEY: str = ""
+    HUGGINGFACE_API_KEY: str = ""
 
     class Config:
         case_sensitive = True
