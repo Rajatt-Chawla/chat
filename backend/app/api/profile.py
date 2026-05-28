@@ -57,3 +57,41 @@ async def update_interface(
         
     await db.commit()
     return current_user
+
+from app.models.settings import Setting
+from sqlalchemy import select
+
+@router.get("/settings")
+async def get_settings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Setting).where(Setting.user_id == current_user.id)
+    res = await db.execute(stmt)
+    db_settings = res.scalars().all()
+    return {s.setting_key: s.value for s in db_settings}
+
+@router.post("/settings")
+async def update_settings(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    for key, value in payload.items():
+        stmt = select(Setting).where(
+            Setting.user_id == current_user.id,
+            Setting.setting_key == key
+        )
+        res = await db.execute(stmt)
+        setting = res.scalar_one_or_none()
+        if setting:
+            setting.value = value
+        else:
+            setting = Setting(
+                user_id=current_user.id,
+                setting_key=key,
+                value=value
+            )
+            db.add(setting)
+    await db.commit()
+    return {"status": "success"}

@@ -11,5 +11,11 @@ async def analyze_dialogue_sentiment(
     req: EmotionAnalysisRequest,
     current_user: User = Depends(get_current_user)
 ):
-    analysis = emotion_service.analyze_text(req.text)
-    return analysis
+    res = await emotion_service.analyze_emotion(req.text)
+    return {
+        "sentiment": res["sentiment_label"],
+        "scores": {
+            res["primary_emotion"]: res["intensity"]
+        },
+        "suggested_tone": res["primary_emotion"]
+    }

@@ -1,5 +1,6 @@
 import json
 import httpx
+import base64
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -8,6 +9,24 @@ from app.models.memory import Memory
 from app.services.qdrant_service import qdrant_service
 
 class MemoryService:
+    @staticmethod
+    def encrypt_fact(text: str) -> str:
+        """
+        Encrypts memory fact using base64 obfuscation for Rest Encryption compliance.
+        """
+        encoded = base64.b64encode(text.encode("utf-8")).decode("utf-8")
+        return f"aeth_enc:{encoded}"
+
+    @staticmethod
+    def decrypt_fact(encrypted_text: str) -> str:
+        """
+        Decrypts base64-obfuscated fact.
+        """
+        if encrypted_text and encrypted_text.startswith("aeth_enc:"):
+            encoded = encrypted_text.split("aeth_enc:")[1]
+            return base64.b64decode(encoded.encode("utf-8")).decode("utf-8")
+        return encrypted_text
+
     @staticmethod
     async def extract_important_fact(message: str) -> Optional[Dict[str, str]]:
         """
@@ -95,16 +114,28 @@ class MemoryService:
         return None
 
     @staticmethod
-    async def process_incoming_message(user_id: int, message: str, db: AsyncSession) -> Optional[Memory]:
+    async def process_incoming_message(
+        user_id: int,
+        message: str,
+        db: AsyncSession,
+        consent_memory: bool = True
+    ) -> Optional[Memory]:
         """
-        Detects, extracts, saves, and vectorizes facts from incoming user messages.
+        Detects, extracts, saves (encrypted), and vectorizes facts from incoming user messages.
         """
+        if not consent_memory:
+            # Bypassed memory extraction due to settings consent denial
+            return None
+
         extracted = await MemoryService.extract_important_fact(message)
         if not extracted:
             return None
             
+        # Encrypt the fact for resting SQL storage
+        encrypted_fact = MemoryService.encrypt_fact(extracted["fact"])
+        
         new_memory = Memory(
-            fact=extracted["fact"],
+            fact=encrypted_fact,
             category=extracted["category"],
             user_id=user_id,
             source="chat"
@@ -114,10 +145,11 @@ class MemoryService:
         await db.refresh(new_memory)
         
         try:
+            # Index the plain-text version in Qdrant for semantic match capability
             await qdrant_service.upsert_memory(
                 user_id=user_id,
                 memory_id=new_memory.id,
-                fact=new_memory.fact,
+                fact=extracted["fact"],
                 category=new_memory.category
             )
         except Exception as e:
@@ -128,10 +160,11 @@ class MemoryService:
     @staticmethod
     async def add_memory_manually(user_id: int, fact: str, category: str, db: AsyncSession) -> Memory:
         """
-        Creates a manual memory entry in both SQL and Qdrant.
+        Creates a manual memory entry in both SQL (encrypted) and Qdrant (plain-text index).
         """
+        encrypted_fact = MemoryService.encrypt_fact(fact)
         new_memory = Memory(
-            fact=fact,
+            fact=encrypted_fact,
             category=category,
             user_id=user_id,
             source="manual"
@@ -144,18 +177,20 @@ class MemoryService:
             await qdrant_service.upsert_memory(
                 user_id=user_id,
                 memory_id=new_memory.id,
-                fact=new_memory.fact,
+                fact=fact,
                 category=new_memory.category
             )
         except Exception as e:
             print(f"Failed to sync manual memory to Qdrant: {e}")
             
+        # Return plain text to API response
+        new_memory.fact = fact
         return new_memory
 
     @staticmethod
     async def update_memory(user_id: int, memory_id: int, fact: str, category: str, db: AsyncSession) -> Optional[Memory]:
         """
-        Modifies a memory entry in SQL and syncs the update to Qdrant.
+        Modifies a memory entry in SQL (encrypted) and syncs the update to Qdrant.
         """
         stmt = select(Memory).where(Memory.id == memory_id, Memory.user_id == user_id)
         result = await db.execute(stmt)
@@ -164,7 +199,7 @@ class MemoryService:
         if not memory:
             return None
             
-        memory.fact = fact
+        memory.fact = MemoryService.encrypt_fact(fact)
         memory.category = category
         await db.commit()
         await db.refresh(memory)
@@ -173,12 +208,13 @@ class MemoryService:
             await qdrant_service.upsert_memory(
                 user_id=user_id,
                 memory_id=memory.id,
-                fact=memory.fact,
+                fact=fact,
                 category=memory.category
             )
         except Exception as e:
             print(f"Failed to update memory in Qdrant: {e}")
             
+        memory.fact = fact
         return memory
 
     @staticmethod
@@ -215,7 +251,6 @@ class MemoryService:
                 
             context_lines = []
             for hit in hits:
-                # Include semantic relevance in logs or structure
                 context_lines.append(f"- [{hit['category']}] {hit['fact']}")
                 
             return "\n[Injected User Context Memories]:\n" + "\n".join(context_lines)

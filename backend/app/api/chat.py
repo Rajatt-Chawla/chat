@@ -68,60 +68,125 @@ async def send_message(
     thread = result.scalar_one_or_none()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
-        
-    # Construct history dictionary list before writing the current user turn
-    history = []
-    for m in thread.messages:
-        history.append({
-            "sender": m.sender,
-            "content": m.content
-        })
 
-    # Log user message
-    user_msg = ChatMessage(
-        thread_id=thread.id,
-        sender="user",
-        content=msg_in.content
-    )
-    db.add(user_msg)
+    # Query user preferences/settings for Private Mode and Consent-based Memory Saving
+    private_mode = False
+    consent_memory = True
     
-    # Selective Memory Detection and Extraction
+    from app.models.settings import Setting
     try:
-        from app.services.memory_service import memory_service
-        await memory_service.process_incoming_message(
+        stmt_settings = select(Setting).where(Setting.user_id == current_user.id)
+        settings_result = await db.execute(stmt_settings)
+        db_settings = settings_result.scalars().all()
+        for s in db_settings:
+            if s.setting_key == "private_mode":
+                val = s.value
+                private_mode = (val is True or val == "true" or str(val).lower() == "true")
+            elif s.setting_key == "consent_memory":
+                val = s.value
+                consent_memory = not (val is False or val == "false" or str(val).lower() == "false")
+    except Exception as e:
+        print(f"Failed to query privacy settings: {e}")
+
+    # Emotion Detection
+    from app.services.emotion_service import emotion_service
+    emotion_snap = await emotion_service.analyze_emotion(msg_in.content)
+    emotion_modifier = emotion_service.get_adaptive_prompt_modifier(emotion_snap["primary_emotion"])
+
+    # Task/Agent Detection
+    from app.services.agent_service import agent_service
+    agent_intent = await agent_service.detect_task_intent(msg_in.content)
+    
+    # Log user message (if NOT in private mode)
+    user_msg = None
+    if not private_mode:
+        user_msg = ChatMessage(
+            thread_id=thread.id,
+            sender="user",
+            content=msg_in.content
+        )
+        db.add(user_msg)
+        await db.flush() # Populate ID
+
+        # Log emotional snapshot
+        try:
+            await emotion_service.record_emotion(
+                user_id=current_user.id,
+                message_id=user_msg.id,
+                analysis=emotion_snap,
+                db=db
+            )
+        except Exception as e:
+            print(f"Failed to record emotional snapshot: {e}")
+
+        # Trigger background/inline memory extraction
+        if consent_memory:
+            try:
+                from app.services.memory_service import memory_service
+                await memory_service.process_incoming_message(
+                    user_id=current_user.id,
+                    message=msg_in.content,
+                    db=db,
+                    consent_memory=consent_memory
+                )
+            except Exception as e:
+                print(f"Memory extraction process error: {e}")
+
+    # Determine response content
+    if agent_intent:
+        # Execute agent workflow directly
+        agent_result = await agent_service.execute_workflow(
             user_id=current_user.id,
-            message=msg_in.content,
+            intent=agent_intent,
             db=db
         )
-    except Exception as e:
-        print(f"Memory extraction process error: {e}")
+        ai_reply_content = agent_result["output"]
+    else:
+        # RAG Context Retrieval
+        rag_context = await rag_service.retrieve_context(
+            user_id=current_user.id,
+            query=msg_in.content,
+            db=db
+        )
+        
+        # History formatting
+        history = []
+        for m in thread.messages:
+            history.append({
+                "sender": m.sender,
+                "content": m.content
+            })
+        
+        # Trigger companion reply generation with modified instruction
+        ai_reply_content = await ai_service.generate_reply(
+            companion_id=thread.companion_id,
+            message=msg_in.content + rag_context + emotion_modifier,
+            history=history,
+            temperature=current_user.temperature,
+            tone=current_user.tone
+        )
+
+    # Log AI message (if NOT in private mode)
+    ai_msg = None
+    if not private_mode:
+        ai_msg = ChatMessage(
+            thread_id=thread.id,
+            sender="ai",
+            content=ai_reply_content
+        )
+        db.add(ai_msg)
+        await db.commit()
+        await db.refresh(ai_msg)
+    else:
+        # Create a mock temporary message model to return to client (not committed to DB)
+        import datetime
+        ai_msg = ChatMessage(
+            thread_id=thread_id,
+            sender="ai",
+            content=f"🔒 [Private Mode Active - Not Persisted]\n{ai_reply_content}",
+            timestamp=datetime.datetime.utcnow()
+        )
     
-    # RAG: Retrieve facts context related to query
-    rag_context = await rag_service.retrieve_context(
-        user_id=current_user.id,
-        query=msg_in.content,
-        db=db
-    )
-    
-    # Trigger dynamic companion AI simulation (Awaited async method)
-    ai_reply_content = await ai_service.generate_reply(
-        companion_id=thread.companion_id,
-        message=msg_in.content + rag_context,
-        history=history,
-        temperature=current_user.temperature,
-        tone=current_user.tone
-    )
-    
-    # Log AI message
-    ai_msg = ChatMessage(
-        thread_id=thread.id,
-        sender="ai",
-        content=ai_reply_content
-    )
-    db.add(ai_msg)
-    
-    await db.commit()
-    await db.refresh(ai_msg)
     return ai_msg
 
 @router.put("/threads/{thread_id}", response_model=ThreadResponse)

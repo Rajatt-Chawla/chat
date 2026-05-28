@@ -17,13 +17,13 @@ import {
 } from "react-icons/fi";
 
 export default function SettingsDashboard() {
-  const { activeCompanion, setActiveCompanion, companions } = useChat();
+  const { activeCompanion, setActiveCompanion, companions, user, token } = useChat();
   const { theme } = useTheme();
 
   // Settings State variables
-  const [username, setUsername] = useState("Jane Developer");
-  const [userBio, setUserBio] = useState("SaaS developer crafting open source frameworks with premium minimal grids.");
-  const [email, setEmail] = useState("jane@developer.io");
+  const [username, setUsername] = useState(user?.name || "Jane Developer");
+  const [userBio, setUserBio] = useState(user?.bio || "SaaS developer crafting open source frameworks with premium minimal grids.");
+  const [email, setEmail] = useState(user?.email || "jane@developer.io");
   const [temperature, setTemperature] = useState(activeCompanion.temperature);
   const [tone, setTone] = useState(activeCompanion.tone);
   const [engine, setEngine] = useState("aetheria-cognitive-v1");
@@ -31,13 +31,97 @@ export default function SettingsDashboard() {
   const [reduceMotion, setReduceMotion] = useState(false);
   const [apiToken, setApiToken] = useState("aeth_live_83ba9c04fe19bc42");
   
+  // Privacy states
+  const [privateMode, setPrivateMode] = useState(false);
+  const [consentMemory, setConsentMemory] = useState(true);
+  
   const [showSavedToast, setShowSavedToast] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  // Sync with user changes
+  React.useEffect(() => {
+    if (user) {
+      setUsername(user.name || "");
+      setUserBio(user.bio || "");
+      setEmail(user.email || "");
+      if (user.temperature !== undefined) setTemperature(user.temperature);
+      if (user.tone) setTone(user.tone);
+      if (user.cognitive_engine) setEngine(user.cognitive_engine);
+      if (user.font_size) setFontSize(user.font_size);
+      if (user.reduce_motion !== undefined) setReduceMotion(user.reduce_motion);
+    }
+  }, [user]);
+
+  // Fetch Privacy Settings
+  React.useEffect(() => {
+    if (token) {
+      fetch("http://localhost:8000/api/v1/profile/settings", {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data) {
+            if (data.private_mode !== undefined) {
+              setPrivateMode(data.private_mode === true || data.private_mode === "true");
+            }
+            if (data.consent_memory !== undefined) {
+              setConsentMemory(data.consent_memory !== false && data.consent_memory !== "false");
+            }
+          }
+        })
+        .catch(e => console.error("Error loading settings:", e));
+    }
+  }, [token]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Save to active companion settings
+    
+    // Save to active companion settings client fallback
     activeCompanion.temperature = temperature;
     activeCompanion.tone = tone;
+
+    if (token) {
+      try {
+        const headers = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        };
+
+        // 1. Save profile
+        await fetch("http://localhost:8000/api/v1/profile/me/profile", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ name: username, email, bio: userBio })
+        });
+
+        // 2. Save tuning
+        await fetch("http://localhost:8000/api/v1/profile/me/tuning", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ temperature, tone, cognitive_engine: engine })
+        });
+
+        // 3. Save interface
+        await fetch("http://localhost:8000/api/v1/profile/me/interface", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ font_size: fontSize, reduce_motion: reduceMotion })
+        });
+
+        // 4. Save Privacy settings
+        await fetch("http://localhost:8000/api/v1/profile/settings", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ private_mode: privateMode, consent_memory: consentMemory })
+        });
+
+        // Update locally
+        localStorage.setItem("privateMode", String(privateMode));
+        localStorage.setItem("consentMemory", String(consentMemory));
+
+      } catch (e) {
+        console.error("Failed to persist settings on server:", e);
+      }
+    }
     
     setShowSavedToast(true);
     setTimeout(() => {
@@ -229,6 +313,73 @@ export default function SettingsDashboard() {
                         className={`
                           w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-250
                           ${reduceMotion ? "translate-x-5.5" : "translate-x-0"}
+                        `}
+                      />
+                    </button>
+                  </div>
+                </div>
+              </GlassCard>
+
+              {/* Data Sovereignty & Privacy Controls */}
+              <GlassCard className="p-6 md:p-8 border border-zinc-200/60 dark:border-zinc-800/80 shadow-sm">
+                <h3 className="text-[15.5px] font-bold text-zinc-900 dark:text-zinc-100 mb-6 flex items-center gap-2 border-b border-zinc-200/40 dark:border-zinc-800/40 pb-3">
+                  <FiLock className="text-emerald-500" /> Data Sovereignty & Privacy Controls
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Private Mode Toggle */}
+                  <div className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-250 dark:border-zinc-850 bg-zinc-100/30 dark:bg-zinc-950/20">
+                    <div>
+                      <h4 className="text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-200">Incognito Private Mode</h4>
+                      <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 leading-normal">
+                        Bypasses all server database logging for chats and sentiments.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPrivateMode(!privateMode)}
+                      className={`
+                        w-12 h-6.5 p-1 rounded-full border transition cursor-pointer relative flex items-center
+                        ${
+                          privateMode
+                            ? "bg-emerald-500 border-transparent text-white"
+                            : "bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
+                        }
+                      `}
+                    >
+                      <span
+                        className={`
+                          w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-250
+                          ${privateMode ? "translate-x-5.5" : "translate-x-0"}
+                        `}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Consent Memory saving toggle */}
+                  <div className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-250 dark:border-zinc-850 bg-zinc-100/30 dark:bg-zinc-950/20">
+                    <div>
+                      <h4 className="text-[13.5px] font-semibold text-zinc-800 dark:text-zinc-200">Consent Memory Saving</h4>
+                      <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 leading-normal">
+                        Allows AI to extract and store personal facts for contextual memory.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setConsentMemory(!consentMemory)}
+                      className={`
+                        w-12 h-6.5 p-1 rounded-full border transition cursor-pointer relative flex items-center
+                        ${
+                          consentMemory
+                            ? "bg-emerald-500 border-transparent text-white"
+                            : "bg-zinc-200 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
+                        }
+                      `}
+                    >
+                      <span
+                        className={`
+                          w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-250
+                          ${consentMemory ? "translate-x-5.5" : "translate-x-0"}
                         `}
                       />
                     </button>

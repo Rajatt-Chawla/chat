@@ -106,9 +106,9 @@ class QdrantService:
 
     async def search_memories(self, user_id: int, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         vector = await self.generate_embedding(query)
-        search_result = self.client.search(
+        search_result = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=vector,
+            query=vector,
             query_filter=Filter(
                 must=[
                     FieldCondition(
@@ -121,7 +121,7 @@ class QdrantService:
         )
         
         results = []
-        for hit in search_result:
+        for hit in search_result.points:
             results.append({
                 "id": hit.id,
                 "fact": hit.payload.get("fact"),
