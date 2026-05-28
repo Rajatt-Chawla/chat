@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Boolean, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, ForeignKey, DateTime, Boolean, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -10,10 +10,10 @@ class Memory(Base):
         Index("ix_memories_user_importance", "user_id", "importance"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     fact = Column(Text, nullable=False)
     category = Column(String, default="Personal", nullable=False)  # "Personal" | "Technical" | "Goals" | "Preferences"
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     source = Column(String, default="chat", nullable=False)
     importance = Column(Integer, default=1, nullable=False)
     is_archived = Column(Boolean, default=False, nullable=False)

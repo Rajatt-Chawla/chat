@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, ForeignKey, DateTime, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -10,10 +10,10 @@ class ChatThread(Base):
         Index("ix_chat_threads_user_companion", "user_id", "companion_id"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     title = Column(String, index=True, nullable=False)
     companion_id = Column(String, default="aria", nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -29,8 +29,8 @@ class ChatMessage(Base):
         Index("ix_chat_history_sender_timestamp", "sender", "timestamp"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    thread_id = Column(Integer, ForeignKey("chat_threads.id", ondelete="CASCADE"), nullable=False)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    thread_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("chat_threads.id", ondelete="CASCADE"), nullable=False)
     sender = Column(String, nullable=False)  # "user" or "ai"
     content = Column(Text, nullable=False)
     model_name = Column(String, nullable=True)

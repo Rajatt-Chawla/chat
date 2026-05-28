@@ -31,9 +31,18 @@ app.include_router(workflow.router, prefix=f"{settings.API_V1_STR}/workflow", ta
 # Automatically spin up DB tables on startup
 @app.on_event("startup")
 async def on_startup():
-    async with engine.begin() as conn:
-        # Create all tables if they do not exist
-        await conn.run_sync(Base.metadata.create_all)
+    if settings.DATABASE_URL.startswith("postgresql"):
+        try:
+            from app.init_db import run_schema
+            await run_schema()
+        except Exception as e:
+            print(f"Warning: PostgreSQL schema execution failed: {e}. Falling back to default metadata creation.")
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+    else:
+        async with engine.begin() as conn:
+            # Create all tables if they do not exist
+            await conn.run_sync(Base.metadata.create_all)
 
 @app.get("/")
 def read_root():

@@ -1,11 +1,11 @@
-from sqlalchemy import Column, String, Text, Boolean, DateTime, Index, Integer, Float, func
+from sqlalchemy import Column, String, Text, Boolean, DateTime, Index, Integer, BigInteger, Float, func
 from sqlalchemy.orm import relationship
 from app.database import Base
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     name = Column(String, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     # Store password hashes only. Never store raw credentials.

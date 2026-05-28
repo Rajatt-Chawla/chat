@@ -1,4 +1,5 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, JSON, String, UniqueConstraint, Integer
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, JSON, String, UniqueConstraint, Integer, BigInteger
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -11,11 +12,11 @@ class Setting(Base):
         Index("ix_settings_user_scope", "user_id", "scope"),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    user_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     scope = Column(String, default="user", nullable=False)
     setting_key = Column(String, nullable=False)
-    value = Column(JSON, nullable=False)
+    value = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     is_secret = Column(Boolean, default=False, nullable=False)
     encrypted_value = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
