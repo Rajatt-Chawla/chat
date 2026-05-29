@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
 from app import models
-from app.api import auth, chat, memory, profile, emotion, research, workflow
+from app.api import auth, chat, memory, profile, emotion, research, workflow, tasks
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -27,6 +27,7 @@ app.include_router(profile.router, prefix=f"{settings.API_V1_STR}/profile", tags
 app.include_router(emotion.router, prefix=f"{settings.API_V1_STR}/emotion", tags=["Sentiment Analytics"])
 app.include_router(research.router, prefix=f"{settings.API_V1_STR}/research", tags=["Web Research Agents"])
 app.include_router(workflow.router, prefix=f"{settings.API_V1_STR}/workflow", tags=["Agent Workflows"])
+app.include_router(tasks.router, prefix=f"{settings.API_V1_STR}/tasks", tags=["Task Reminders"])
 
 # Automatically spin up DB tables on startup
 @app.on_event("startup")

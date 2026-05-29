@@ -15,6 +15,7 @@ import {
   FiMenu,
   FiX,
   FiCheck,
+  FiCheckSquare,
 } from "react-icons/fi";
 import Link from "next/link";
 
@@ -39,6 +40,7 @@ export default function Sidebar() {
   const mainLinks = [
     { name: "AI Companion Chat", href: "/dashboard", icon: FiMessageSquare },
     { name: "Memory Dashboard", href: "/dashboard/memory", icon: FiCpu },
+    { name: "Tasks Dashboard", href: "/dashboard/tasks", icon: FiCheckSquare },
     { name: "Settings Portal", href: "/dashboard/settings", icon: FiSettings },
   ];
 
